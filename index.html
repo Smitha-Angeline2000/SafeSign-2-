@@ -335,7 +335,7 @@
       formData.append("language", lang);
 
       try {
-        const res = await fetch("http://localhost:8001/analyze", {
+        const res = await fetch("http://localhost:8003/analyze", {
           method: "POST",
           body: formData
         });
