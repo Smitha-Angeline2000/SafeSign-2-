@@ -48,7 +48,7 @@ SafeSign identifies key clauses in legal and contractual documents, such as:
 Each detected clause is marked as **YES/NO**, and an **overall risk score** is computed to provide an at-a-glance evaluation of the document's risk exposure.
 
 <p align="center">
-  <a href="https://ibb.co/fzm6Kt76"><img src="https://i.ibb.co/1tHypKxy/Whats-App-Image-2025-12-06-at-16-33-23.jpg" alt="Whats-App-Image-2025-12-06-at-16-33-23" border="0"></a> alt="SafeSign Dashboard" width="600"/>
+  <a href="https://ibb.co/fzm6Kt76"><img src="https://i.ibb.co/1tHypKxy/Whats-App-Image-2025-12-06-at-16-33-23.jpg" alt="Whats-App-Image-2025-12-06-at-16-33-23" border="0"> </a> 
 </p>
 
 
