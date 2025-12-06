@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SafeSign – Contract Risk Analyzer</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: "#020617",
+            card: "#020617",
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Simple animated background (always moving) -->
+  <style>
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(249, 115, 22, 0.55), transparent 55%),
+        radial-gradient(circle at 100% 0%, rgba(52, 211, 153, 0.45), transparent 55%),
+        radial-gradient(circle at 0% 100%, rgba(96, 165, 250, 0.45), transparent 55%),
+        radial-gradient(circle at 100% 100%, rgba(236, 72, 153, 0.45), transparent 55%),
+        #020617;
+      background-size: 260% 260%;
+      animation: gradientMove 18s ease-in-out infinite alternate;
+      color: #e5e7eb;
+    }
+
+    @keyframes gradientMove {
+      0% { background-position: 0% 0%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 100%; }
+    }
+
+    .soft-glow {
+      box-shadow:
+        0 20px 45px rgba(0, 0, 0, 0.8),
+        0 0 40px rgba(15, 23, 42, 0.7);
+    }
+
+    .floating {
+      animation: float 6s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-6px); }
+      100% { transform: translateY(0px); }
+    }
+
+    .btn-pulse:hover {
+      box-shadow:
+        0 0 18px rgba(249, 115, 22, 0.7);
+    }
+  </style>
+
+  <!-- jsPDF for PDF download -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+</head>
+
+<body class="text-slate-100">
+  <div class="min-h-screen flex flex-col bg-slate-950/60 backdrop-blur-sm">
+
+    <!-- Top bar -->
+    <header class="w-full border-b border-slate-800/70 bg-black/30 backdrop-blur-md">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-2xl bg-orange-500/10 border border-orange-400/60 flex items-center justify-center floating">
+            <span class="text-sm font-bold text-orange-400 tracking-tight">S</span>
+          </div>
+          <div>
+            <h1 class="text-lg font-semibold tracking-tight flex items-center gap-1.5">
+              SafeSign
+            </h1>
+            <p class="text-[11px] text-slate-300 leading-tight">
+              Confusion to Clarity.
+            </p>
+          </div>
+        </div>
+        <div class="hidden sm:flex items-center gap-2 text-[11px] text-slate-400"></div>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-1">
+      <div class="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-[1.05fr,1.45fr] gap-6">
+
+        <!-- LEFT: Upload + controls -->
+        <section class="bg-slate-950/80 border border-slate-800/80 rounded-3xl p-5 soft-glow flex flex-col gap-4">
+          <div>
+            <h2 class="text-base font-semibold mb-1 flex items-center gap-2">
+              Upload a document
+              <span class="text-[10px] text-slate-400 font-normal">
+                (PDF / text)
+              </span>
+            </h2>
+            <p class="text-xs text-slate-400">
+              Ideal for loan agreements, credit card T&Cs, EMI plans, insurance policies, and rental contracts.
+            </p>
+          </div>
+
+          <!-- Upload area -->
+          <label for="file" class="block">
+            <div id="uploadBox"
+              class="group border border-dashed border-slate-700 rounded-2xl p-5 bg-slate-950 hover:border-orange-500/80 hover:bg-slate-900 transition cursor-pointer flex flex-col items-center justify-center text-center">
+              <div id="uploadContentDefault" class="flex flex-col items-center justify-center gap-2">
+                <div
+                  class="w-11 h-11 rounded-2xl bg-slate-900 border border-slate-700 flex items-center justify-center floating">
+                  <span class="text-2xl">📄</span>
+                </div>
+                <p class="text-xs">
+                  <span class="font-semibold text-slate-100">Click to choose a file</span>
+                  <span class="text-slate-400"> or drag & drop</span>
+                </p>
+                <p class="text-[11px] text-slate-500">
+                  File is analysed locally using the FastAPI backend.
+                </p>
+              </div>
+
+              <!-- Success content (after upload) -->
+              <div id="uploadSuccess" class="hidden flex flex-col items-center gap-1">
+                <span class="text-2xl">✅</span>
+                <p class="text-[13px] font-semibold text-emerald-400 text-center">
+                  File is ready for analysis. Click "Analyse document".
+                </p>
+                <p id="uploadedFileName" class="text-[11px] text-slate-300"></p>
+              </div>
+            </div>
+            <input id="file" type="file" class="hidden" />
+          </label>
+
+          <!-- Small controls -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px] text-slate-300">
+            <div>
+              <p class="mb-1 text-slate-400">Document type (optional)</p>
+              <select
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-orange-500/70">
+                <option>Loan agreement</option>
+                <option>Credit card / EMI</option>
+                <option>Insurance policy</option>
+                <option>Rental agreement</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div>
+              <p class="mb-1 text-slate-400">Explanation language</p>
+              <select id="language"
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-orange-500/70">
+                <option value="en">English</option>
+                <option value="hi">Hinglish</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- File info helper -->
+          <div id="fileInfo" class="text-[11px] text-slate-400 mt-1">
+            No file selected.
+          </div>
+
+          <!-- Analyse button -->
+          <div class="flex items-center justify-between mt-3 gap-3">
+            <button id="analyzeBtn"
+              onclick="analyzeDoc()"
+              class="flex-1 inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-full bg-orange-500 hover:bg-orange-600 active:scale-[0.97] text-sm font-semibold transition btn-pulse disabled:opacity-60 disabled:cursor-not-allowed">
+              <span id="btnIcon">⚡</span>
+              <span>Analyse document</span>
+            </button>
+            <p id="status" class="text-[11px] text-slate-300 min-h-[16px] text-right flex-1 ml-1 truncate"></p>
+          </div>
+
+          <!-- Analysis steps -->
+          <div id="analysisSteps" class="hidden mt-3 text-[11px] text-slate-400 space-y-1 border border-slate-800/80 rounded-2xl px-3 py-2 bg-slate-950">
+            <p class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">What SafeSign does</p>
+            <p id="step1" class="opacity-30 transition">1. Extracts text from the document…</p>
+            <p id="step2" class="opacity-30 transition">2. Scans for lock-ins, penalties and extra fees…</p>
+            <p id="step3" class="opacity-30 transition">3. Calculates an overall risk score…</p>
+            <p id="step4" class="opacity-30 transition">4. Generates simple explanations for key clauses…</p>
+            <p id="step5" class="opacity-30 transition">5. Builds a summary you can review in seconds…</p>
+          </div>
+        </section>
+
+        <!-- RIGHT: Analysis result -->
+        <section class="bg-slate-950/80 border border-slate-800/80 rounded-3xl p-5 soft-glow flex flex-col">
+          <!-- Empty state -->
+          <div id="emptyState" class="flex-1 flex flex-col items-center justify-center text-center text-slate-500 text-xs">
+            <div class="w-16 h-16 rounded-full border border-dashed border-slate-700 flex items-center justify-center mb-3 floating">
+              <span class="text-2xl">🛡️</span>
+            </div>
+            <p class="mb-1 text-slate-200 text-sm">No document analysed yet</p>
+            <p class="max-w-xs">
+              Upload a contract on the left. SafeSign will highlight risky parts and explain them in simple language.
+            </p>
+          </div>
+
+          <!-- Result state -->
+          <div id="resultCard" class="hidden flex-1 flex flex-col gap-4">
+            <!-- Document header + risk tag + download button -->
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-[11px] text-slate-400">Analysed document</p>
+                <h2 class="text-sm font-semibold truncate max-w-xs" id="fileName">Document</h2>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="riskPill"
+                  class="text-[10px] uppercase tracking-wide px-2 py-[3px] rounded-full border bg-slate-900 text-slate-300">
+                  Risk
+                </span>
+                <button id="downloadBtn"
+                  onclick="downloadReport()"
+                  class="text-[11px] px-3 py-1 rounded-full border border-slate-700 bg-slate-900 hover:bg-slate-800 hover:border-slate-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  ⬇ Download report
+                </button>
+              </div>
+            </div>
+
+            <!-- Risk overview card -->
+            <div class="grid grid-cols-1 sm:grid-cols-[1.1fr,1.4fr] gap-3">
+              <div class="bg-slate-950 border border-slate-800 rounded-2xl px-3 py-3 flex flex-col justify-center">
+                <p class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Overall risk score</p>
+                <p id="scoreText" class="text-sm font-semibold mb-1"></p>
+                <div class="w-full h-2 rounded-full bg-slate-900 overflow-hidden mb-1">
+                  <div id="riskBar" class="h-2 w-0 rounded-full transition-all duration-500"></div>
+                </div>
+                <p class="text-[11px] text-slate-500">
+                  Lower is safer. High scores usually mean lock-ins, heavy penalties or hard-to-see extra fees.
+                </p>
+              </div>
+
+              <div class="bg-slate-950 border border-slate-800 rounded-2xl px-3 py-3">
+                <p class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Summary</p>
+                <div id="summaryBox" class="text-xs text-slate-100 leading-relaxed"></div>
+              </div>
+            </div>
+
+            <!-- Clauses list -->
+            <div class="flex-1 min-h-[140px]">
+              <p class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Risky clauses detected</p>
+              <ul id="clausesList" class="space-y-2 text-xs max-h-60 overflow-auto pr-1"></ul>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full border-t border-slate-900/80 bg-black/40">
+      <div class="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-[10px] text-slate-500">
+        <span>SafeSign prototype · Helps you understand key risks before you sign</span>
+        <span>Demo only · Not legal advice</span>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("file");
+    const fileInfo = document.getElementById("fileInfo");
+    const statusEl = document.getElementById("status");
+    const btnIcon = document.getElementById("btnIcon");
+    const languageSelect = document.getElementById("language");
+
+    const emptyState = document.getElementById("emptyState");
+    const resultCard = document.getElementById("resultCard");
+
+    const fileNameEl = document.getElementById("fileName");
+    const riskPill = document.getElementById("riskPill");
+    const scoreTextEl = document.getElementById("scoreText");
+    const riskBar = document.getElementById("riskBar");
+    const summaryBox = document.getElementById("summaryBox");
+    const clausesList = document.getElementById("clausesList");
+
+    const analysisSteps = document.getElementById("analysisSteps");
+    const stepIds = ["step1", "step2", "step3", "step4", "step5"];
+
+    const uploadBox = document.getElementById("uploadBox");
+    const uploadContentDefault = document.getElementById("uploadContentDefault");
+    const uploadSuccess = document.getElementById("uploadSuccess");
+    const uploadedFileName = document.getElementById("uploadedFileName");
+
+    const downloadBtn = document.getElementById("downloadBtn");
+    downloadBtn.disabled = true;
+
+    let lastAnalysis = null;
+
+    fileInput.addEventListener("change", () => {
+      if (!fileInput.files.length) {
+        uploadContentDefault.classList.remove("hidden");
+        uploadSuccess.classList.add("hidden");
+        uploadBox.classList.remove("border-emerald-500");
+        uploadBox.classList.add("border-slate-700");
+        fileInfo.textContent = "No file selected.";
+        fileInfo.className = "text-[11px] text-slate-400 mt-1";
+      } else {
+        const name = fileInput.files[0].name;
+        uploadContentDefault.classList.add("hidden");
+        uploadSuccess.classList.remove("hidden");
+        uploadedFileName.textContent = name;
+        uploadBox.classList.add("border-emerald-500");
+        uploadBox.classList.remove("border-slate-700");
+        fileInfo.textContent = "File is ready. Click Analyse document to start.";
+        fileInfo.className = "text-[11px] text-emerald-300 mt-1";
+      }
+    });
+
+    async function analyzeDoc() {
+      if (!fileInput.files.length) {
+        alert("Please select a file first.");
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const lang = languageSelect.value || "en";
+
+      statusEl.textContent = "Sending document to SafeSign for analysis…";
+      btnIcon.textContent = "⏳";
+
+      analysisSteps.classList.remove("hidden");
+      stepIds.forEach(id => document.getElementById(id).classList.add("opacity-30"));
+      stepIds.forEach((id, index) => {
+        setTimeout(() => {
+          document.getElementById(id).classList.remove("opacity-30");
+        }, 250 + index * 280);
+      });
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("language", lang);
+
+      try {
+        const res = await fetch("http://localhost:8001/analyze", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!res.ok) {
+          statusEl.textContent = "Server error: " + res.status;
+          btnIcon.textContent = "⚡";
+          return;
+        }
+
+        const data = await res.json();
+        fillResultUI(data, file.name);
+        statusEl.textContent = "";
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Could not connect to backend. Is it running on port 8001?";
+      } finally {
+        btnIcon.textContent = "⚡";
+        setTimeout(() => {
+          analysisSteps.classList.add("hidden");
+          stepIds.forEach(id => document.getElementById(id).classList.add("opacity-30"));
+        }, 900);
+      }
+    }
+
+    function fillResultUI(data, fallbackName) {
+      emptyState.classList.add("hidden");
+      resultCard.classList.remove("hidden");
+
+      lastAnalysis = data;
+      downloadBtn.disabled = false;
+
+      const score = data.risk_score ?? 0;
+      const levelRaw = (data.risk_level || "unknown").toLowerCase();
+      const level = levelRaw.toUpperCase();
+
+      fileNameEl.textContent = data.file_name || fallbackName || "Document";
+
+      if (level === "UNKNOWN") {
+        scoreTextEl.textContent = `Score: ${score}/100 · Risk level unknown`;
+      } else {
+        scoreTextEl.textContent = `Score: ${score}/100 · ${level} risk`;
+      }
+
+      riskBar.style.width = score + "%";
+      riskBar.className = "h-2 w-full rounded-full transition-all duration-500";
+      if (score < 30) {
+        riskBar.classList.add("bg-emerald-400");
+        riskPill.textContent = "Low risk";
+        riskPill.className =
+          "text-[10px] uppercase tracking-wide px-2 py-[3px] rounded-full border bg-emerald-500/10 border-emerald-400/50 text-emerald-300";
+      } else if (score < 70) {
+        riskBar.classList.add("bg-yellow-400");
+        riskPill.textContent = "Medium risk";
+        riskPill.className =
+          "text-[10px] uppercase tracking-wide px-2 py-[3px] rounded-full border bg-yellow-500/10 border-yellow-400/50 text-yellow-300";
+      } else {
+        riskBar.classList.add("bg-red-500");
+        riskPill.textContent = "High risk";
+        riskPill.className =
+          "text-[10px] uppercase tracking-wide px-2 py-[3px] rounded-full border bg-red-500/10 border-red-400/60 text-red-300";
+      }
+
+      summaryBox.textContent = data.summary || "No summary available.";
+
+      clausesList.innerHTML = "";
+      const clauses = data.clauses || [];
+      if (!clauses.length) {
+        const li = document.createElement("li");
+        li.className = "text-[11px] text-slate-500";
+        li.textContent = "No risky clauses were detected based on the current checks.";
+        clausesList.appendChild(li);
+        return;
+      }
+
+      clauses.forEach((c) => {
+        const li = document.createElement("li");
+        li.className = "border border-slate-800 rounded-2xl px-3 py-2 bg-slate-950";
+
+        const title = c.title || "Risky clause";
+        const simp = c.simplified_text || "";
+        const original = c.original_text || "";
+        const severity = (c.severity || "medium").toLowerCase();
+
+        const headerDiv = document.createElement("div");
+        headerDiv.className = "flex items-center justify-between mb-[2px]";
+
+        const titleSpan = document.createElement("span");
+        titleSpan.className = "font-semibold text-[12px]";
+        titleSpan.textContent = title;
+
+        const pill = document.createElement("span");
+        pill.className = "text-[10px] uppercase tracking-wide px-2 py-[2px] rounded-full border";
+        if (severity === "high") {
+          pill.textContent = "High";
+          pill.classList.add("bg-red-500/10", "border-red-400/60", "text-red-300");
+        } else if (severity === "low") {
+          pill.textContent = "Low";
+          pill.classList.add("bg-emerald-500/10", "border-emerald-400/60", "text-emerald-300");
+        } else {
+          pill.textContent = "Medium";
+          pill.classList.add("bg-yellow-500/10", "border-yellow-400/60", "text-yellow-300");
+        }
+
+        headerDiv.appendChild(titleSpan);
+        headerDiv.appendChild(pill);
+
+        const simpleDiv = document.createElement("div");
+        simpleDiv.className = "text-[12px] text-slate-200";
+        simpleDiv.textContent =
+          simp || "This clause may create some financial or contractual risk. Please review it carefully.";
+
+        const originalDiv = document.createElement("div");
+        originalDiv.className = "text-[11px] text-slate-500 mt-1 italic";
+        originalDiv.textContent = original ? `"${original}"` : "";
+
+        li.appendChild(headerDiv);
+        li.appendChild(simpleDiv);
+        if (original) li.appendChild(originalDiv);
+
+        clausesList.appendChild(li);
+      });
+    }
+
+    // ---- New, cleaner PDF design ----
+    function downloadReport() {
+      if (!lastAnalysis) {
+        alert("Please analyse a document first.");
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+
+      const data = lastAnalysis;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 15;
+      const contentWidth = pageWidth - margin * 2;
+      let y = 30;
+
+      // overall risk colour
+      const level = (data.risk_level || "unknown").toLowerCase();
+      let riskColor = { r: 148, g: 163, b: 184 }; // gray
+      if (level === "low") riskColor = { r: 34, g: 197, b: 94 };
+      else if (level === "medium") riskColor = { r: 245, g: 158, b: 11 };
+      else if (level === "high") riskColor = { r: 239, g: 68, b: 68 };
+
+      // HEADER
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, pageWidth, 22, "F");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(249, 115, 22);
+      doc.text("SafeSign", margin, 11);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(226, 232, 240);
+      doc.text("Contract Risk Report", margin, 17);
+
+      const stamp = "Prototype · Not legal advice";
+      const tw = doc.getTextWidth(stamp);
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(stamp, pageWidth - margin - tw, 17);
+
+      function ensureSpace(extra = 10) {
+        if (y + extra > 280) {
+          doc.addPage();
+          y = 20;
+        }
+      }
+
+      function sectionTitle(text) {
+        ensureSpace(10);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(15, 23, 42);
+        doc.text(text, margin, y);
+        y += 5;
+        doc.setDrawColor(209, 213, 219);
+        doc.setLineWidth(0.3);
+        doc.line(margin, y, margin + contentWidth, y);
+        y += 5;
+      }
+
+      function bodyText(text, size = 10, color = { r: 55, g: 65, b: 81 }, lineGap = 4.5) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(size);
+        doc.setTextColor(color.r, color.g, color.b);
+        const lines = doc.splitTextToSize(text, contentWidth);
+        lines.forEach(line => {
+          ensureSpace(lineGap + 1);
+          doc.text(line, margin, y);
+          y += lineGap;
+        });
+        y += 2;
+      }
+
+      // DOCUMENT OVERVIEW CARD
+      sectionTitle("Document overview");
+
+      ensureSpace(28);
+      doc.setDrawColor(229, 231, 235);
+      doc.setFillColor(248, 250, 252);
+      doc.rect(margin, y, contentWidth, 26, "FD");
+
+      let innerY = y + 7;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(30, 64, 175);
+      doc.text("File name", margin + 4, innerY);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(15, 23, 42);
+      const fileLines = doc.splitTextToSize(
+        data.file_name || "Document",
+        contentWidth - 60
+      );
+      fileLines.forEach(line => {
+        innerY += 4;
+        doc.text(line, margin + 4, innerY);
+      });
+
+      // score on right
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+      doc.setTextColor(riskColor.r, riskColor.g, riskColor.b);
+      doc.text(`${data.risk_score ?? 0}/100`, margin + contentWidth - 27, y + 13);
+
+      // risk level pill
+      doc.setFillColor(riskColor.r, riskColor.g, riskColor.b);
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
+      const pillText = (data.risk_level || "unknown").toUpperCase() + " RISK";
+      const pillWidth = doc.getTextWidth(pillText) + 8;
+      doc.rect(margin + contentWidth - pillWidth - 4, y + 16, pillWidth, 7, "F");
+      doc.text(pillText, margin + contentWidth - pillWidth, y + 21);
+
+      y += 26 + 6;
+      bodyText(
+        "Colour coding: green = safer, yellow = moderate risk, red = high risk. Still read the original document once before signing.",
+        9,
+        { r: 107, g: 114, b: 128 }
+      );
+
+      // SUMMARY
+      y += 20 + 6;
+      sectionTitle("Summary");
+      bodyText(data.summary || "No summary available.");
+
+      // RISKY CLAUSES
+      y += 20 + 6;
+      sectionTitle("Risky clauses");
+      const clauses = data.clauses || [];
+
+      if (!clauses.length) {
+        bodyText(
+          "No risky clauses were detected based on the current checks. This does not guarantee the document is risk-free."
+        );
+      } else {
+        clauses.forEach((c, idx) => {
+          ensureSpace(30);
+
+          // clause card
+          const cardX = margin;
+          const cardY = y;
+          const cardW = contentWidth;
+          doc.setDrawColor(229, 231, 235);
+          doc.setFillColor(249, 250, 251);
+          doc.rect(cardX, cardY, cardW, 32, "FD");
+
+          let cy = cardY + 6;
+
+          // title
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(15, 23, 42);
+          const titleText = `${idx + 1}. ${c.title || "Clause"}`;
+          const titleLines = doc.splitTextToSize(titleText, cardW - 40);
+          titleLines.forEach(line => {
+            doc.text(line, cardX + 4, cy);
+            cy += 4;
+          });
+
+          // severity tag
+          let sevColor = { r: 245, g: 158, b: 11 };
+          const sev = (c.severity || "medium").toLowerCase();
+          if (sev === "high") sevColor = { r: 239, g: 68, b: 68 };
+          else if (sev === "low") sevColor = { r: 34, g: 197, b: 94 };
+
+          const sevText = (c.severity || "medium").toUpperCase();
+          const sevWidth = doc.getTextWidth(sevText) + 6;
+          doc.setFillColor(sevColor.r, sevColor.g, sevColor.b);
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(8);
+          doc.rect(cardX + cardW - sevWidth - 6, cardY + 4, sevWidth, 7, "F");
+          doc.text(sevText, cardX + cardW - sevWidth - 3, cardY + 9);
+
+          // simple explanation
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9);
+          doc.setTextColor(55, 65, 81);
+          cy += 2;
+          const simp = c.simplified_text || "";
+          if (simp) {
+            const simpLines = doc.splitTextToSize("Simple: " + simp, cardW - 8);
+            simpLines.forEach(line => {
+              doc.text(line, cardX + 4, cy);
+              cy += 4;
+            });
+          }
+
+          // original text
+          const orig = c.original_text || "";
+          if (orig) {
+            cy += 2;
+            doc.setFontSize(8);
+            doc.setTextColor(107, 114, 128);
+            const origLines = doc.splitTextToSize("Original: " + orig, cardW - 8);
+            origLines.forEach(line => {
+              doc.text(line, cardX + 4, cy);
+              cy += 3.5;
+            });
+          }
+
+          y = cardY + Math.max(32, cy - cardY) + 4;
+        });
+      }
+
+      // footer
+      y = 285;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        "SafeSign is a prototype. This report is for information only and does not replace professional legal advice.",
+        margin,
+        y
+      );
+
+      const safeName = (data.file_name || "safesign_report").replace(/[^\w\-\.]+/g, "_");
+      doc.save(`${safeName}_analysis.pdf`);
+    }
+  </script>
+</body>
+</html>
