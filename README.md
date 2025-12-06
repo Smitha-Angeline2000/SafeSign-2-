@@ -8,7 +8,21 @@ Most users sign financial documents (loan agreements, insurance policies, EMI co
 - There is no tool that explains these documents simply before signing.
 ___
 ## What happens then?
-- The common man eventually signs affidavits and legal documentation without knowing the traps and loss of money they lead to.
+- Many people sign contracts or documents without fully understanding the legal consequences.
+
+- This can result in financial loss, unwanted obligations, or legal disputes.
+
+- SafeSign automatically analyzes PDF documents and extracts key clauses.
+
+- It assesses potential risks associated with each clause, giving an overall risk score.
+
+- Provides a plain-language summary of the document for quick understanding.
+
+- Empowers users to make informed decisions before signing important documents.
+
+- Acts as a digital safeguard against hidden legal and financial pitfalls.
+
+- Makes legal information accessible and actionable, reducing the chances of unintended commitments.
 ---
 
 ## Features
