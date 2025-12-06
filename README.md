@@ -1,6 +1,6 @@
 # 💸💸 SafeSign 
 ### A financial tool that reads, classifies, and extracts risky clauses using NLP & rule-based legal mapping
----
+___
 ### Problem Statement:
 Most users sign financial documents (loan agreements, insurance policies, EMI contracts, credit cards, mutual funds) without fully understanding hidden clauses, because:
 - They are written in legal/financial jargon, not plain language.
