@@ -1,5 +1,5 @@
-# 💸💸 SafeSign 
---- SafeSign is a web-based application designed to help professionals, students, and legal teams analyze PDF documents with precision. It combines **text extraction**, **clause detection**, and **GPT-powered summarization** to provide insights into legal, academic, and technical documents. The application provides a drag-and-drop interface for easy PDF uploads and delivers a detailed analysis report highlighting potential risks and key points from the document.
+# 💸 SafeSign 💸 
+SafeSign is a web-based application designed to help professionals, students, and legal teams analyze PDF documents with precision. It combines **text extraction**, **clause detection**, and **GPT-powered summarization** to provide insights into legal, academic, and technical documents. The application provides a drag-and-drop interface for easy PDF uploads and delivers a detailed analysis report highlighting potential risks and key points from the document.
 ___
 ### Problem Statement:
 Most users sign financial documents (loan agreements, insurance policies, EMI contracts, credit cards, mutual funds) without fully understanding hidden clauses, because:
