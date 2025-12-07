@@ -336,6 +336,6 @@ async def analyze_document(
 
 
 # Optional: run with python main.py
-if __name__ == "_main_":
+if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8003, reload=True)
