@@ -1,5 +1,13 @@
+<<<<<<< HEAD
 GROQ_API_KEY = os.environ.get("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")
 fastapi
 uvicorn
 python-multipart
 pdfplumber
+=======
+GROQ_API_KEY = os.environ.get("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")
+fastapi
+uvicorn
+python-multipart
+pdfplumber
+>>>>>>> 1d8008da2378a9dafefba105d555629413be7b25
