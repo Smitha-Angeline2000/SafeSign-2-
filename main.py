@@ -1,296 +1,147 @@
+import os
+import io
+import json
+import re
+from typing import Any, Dict, List
+
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
-import io
-import os
-import re
-import json
 
-import pdfplumber
 from groq import Groq
 
-# =========================
-# GROQ (AI) SETUP
-# =========================
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+# OCR-related imports
+from PIL import Image
+import pytesseract
 
-# Choose Groq model
-GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
+# PDF tools
+import pdfplumber
+
+try:
+    from pdf2image import convert_from_bytes
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
+
 
 app = FastAPI()
 
-# =========================
-# CORS
-# =========================
+# Allow frontend to call backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # fine for local demo / hackathon
+    allow_origins=["*"],   # okay for demo
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# =========================
-# FRONTEND: serve index.html at "/"
-# =========================
-@app.get("/", response_class=HTMLResponse)
-def serve_frontend():
+
+@app.get("/")
+def home():
+    return {"message": "SafeSign backend running with AI + OCR support!"}
+
+
+def get_groq_client() -> Groq:
     """
-    When you open http://127.0.0.1:8001/ in browser,
-    this will directly show your index.html page.
+    Create Groq client using API key from environment.
+    Set:  export GROQ_API_KEY="your_key_here"
     """
-    return FileResponse("index.html")
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY environment variable not set")
+    return Groq(api_key=api_key)
 
 
-# =========================
-# FILE TEXT EXTRACTION
-# =========================
-def extract_text_from_file(upload_file: UploadFile) -> str:
+def ocr_image_bytes(image_bytes: bytes) -> str:
     """
-    Extract text from uploaded file.
-    - If PDF: use pdfplumber
-    - Else: decode as UTF-8
+    Run OCR on raw image bytes using Tesseract via pytesseract.
     """
-    filename = upload_file.filename.lower()
-    content = upload_file.file.read()
-
-    if filename.endswith(".pdf"):
-        try:
-            with pdfplumber.open(io.BytesIO(content)) as pdf:
-                pages_text = [page.extract_text() or "" for page in pdf.pages]
-                return "\n".join(pages_text)
-        except Exception:
-            try:
-                return content.decode("utf-8", errors="ignore")
-            except Exception:
-                return ""
-    else:
-        try:
-            return content.decode("utf-8", errors="ignore")
-        except Exception:
-            return ""
-
-
-# =========================
-# AI-BASED CLAUSE DETECTION
-# =========================
-def ai_detect_risks(full_text: str, language: str):
-    """
-    Ask Groq LLM to:
-    - read whole document text
-    - find risky clauses
-    - classify type + severity
-    - generate simplified explanation in chosen language
-    Returns list of clauses or None if error / no API key.
-    """
-    if not groq_client or not GROQ_API_KEY:
-        return None  # fallback to rule-based
-
-    lang_desc = (
-        "English (simple, non-legal, friendly tone)"
-        if language == "en"
-        else "Hinglish (mix of Hindi and English, written in Latin letters, very simple)"
-    )
-
-    system_msg = (
-        "You are a careful legal assistant for Indian consumers.\n"
-        "You read contracts (loan agreements, credit card T&Cs, EMI plans, insurance, rental agreements).\n"
-        "Your job is to identify clauses that may create risk for a normal customer, then explain them in very simple language.\n"
-        "You are NOT giving legal advice, only a simple explanation."
-    )
-
-    # Truncate very long documents so request doesn't explode
-    truncated_text = full_text[:15000]
-
-    user_msg = f"""
-Read the following contract text and extract all clauses that look risky for a normal customer
-in India. Focus especially on:
-
-1. Lock-in or minimum tenure (hard to exit a plan / agreement).
-2. Foreclosure / prepayment charges for loans and EMIs.
-3. Penalties, late fees, or high overdue interest.
-4. Automatic renewal of services / subscriptions.
-5. Data sharing / third-party marketing / sharing with partners.
-6. Hidden fees like processing fees, non-refundable fees, maintenance charges, etc.
-
-The contract text is:
-
-\"\"\"{truncated_text}\"\"\" 
-
-Return ONLY valid JSON (no explanation text outside JSON) with this structure:
-
-{{
-  "clauses": [
-    {{
-      "type": "lock_in" | "foreclosure" | "penalty" | "auto_renew" | "data_sharing" | "charges" | "other",
-      "title": "short human-readable title for the clause",
-      "severity": "high" | "medium" | "low",
-      "original_text": "exact sentence or paragraph from the contract that is risky",
-      "simplified_text": "very simple explanation in {lang_desc}"
-    }}
-  ]
-}}
-
-Rules:
-- Only include clauses that are actually risky or important.
-- If nothing is risky, return: {{ "clauses": [] }}
-- Keep "original_text" short but complete enough to understand the clause.
-- Make "simplified_text" 1–3 short sentences, extremely simple {lang_desc}.
-- Do NOT add any extra keys. Do NOT wrap the JSON with ``` or any markdown.
-""".strip()
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+    except Exception:
+        return ""
 
     try:
-        completion = groq_client.chat.completions.create(
-            model=GROQ_MODEL_NAME,
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.1,
-            max_tokens=1024,
-        )
-
-        content = completion.choices[0].message.content.strip()
-
-        # Try to safely extract JSON even if model wraps it weirdly
-        start = content.find("{")
-        end = content.rfind("}")
-        if start == -1 or end == -1:
-            return None
-
-        json_str = content[start : end + 1]
-        data = json.loads(json_str)
-
-        clauses = data.get("clauses", [])
-        cleaned = []
-        for c in clauses:
-            cleaned.append({
-                "type": c.get("type", "other"),
-                "title": c.get("title", "Risky clause"),
-                "severity": c.get("severity", "medium").lower(),
-                "original_text": c.get("original_text", "").strip(),
-                "simplified_text": c.get("simplified_text", "").strip(),
-            })
-        return cleaned
-
+        text = pytesseract.image_to_string(image)
     except Exception:
-        return None
+        text = ""
+
+    return text or ""
 
 
-# =========================
-# SIMPLE RULE-BASED FALLBACK
-# =========================
-def fallback_detect_risks(text: str, language: str):
+def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
     """
-    Keyword rules.
-    Used only if AI-based detection fails.
+    Extract text from a PDF:
+    1. Try pdfplumber (normal text-based PDFs)
+    2. If that fails or is empty, try OCR on each page image via pdf2image + Tesseract
     """
-    rules = {
-        "lock_in": {
-            "title": "Lock-in Period",
-            "severity": "high",
-            "keywords": ["lock-in", "lock in", "minimum tenure", "cannot cancel", "min tenure"]
-        },
-        "foreclosure": {
-            "title": "Foreclosure / Prepayment Charges",
-            "severity": "high",
-            "keywords": ["foreclosure", "prepayment", "pre-closure", "pre closure"]
-        },
-        "penalty": {
-            "title": "Penalty & Late Fees",
-            "severity": "high",
-            "keywords": ["late fee", "late payment", "penalty", "overdue interest"]
-        },
-        "auto_renew": {
-            "title": "Automatic Renewal",
-            "severity": "medium",
-            "keywords": ["auto renewal", "auto-renewal", "automatically renewed"]
-        },
-        "data_sharing": {
-            "title": "Data Sharing & Third-Party Consent",
-            "severity": "medium",
-            "keywords": ["third party", "share your data", "marketing purposes", "partners and affiliates"]
-        },
-        "charges": {
-            "title": "Hidden Charges & Fees",
-            "severity": "medium",
-            "keywords": ["processing fee", "non-refundable", "service charge", "additional charges", "maintenance fee"]
-        }
-    }
+    text = ""
 
-    def simple_explanation(title: str, language: str) -> str:
-        if language == "hi":
-            mapping = {
-                "Lock-in Period": "Iska matlab hai ki aap kuch time tak yeh plan ya agreement easily band nahi kar sakte.",
-                "Foreclosure / Prepayment Charges": "Agar aap loan ya EMI jaldi band karoge to extra charges ya penalty lag sakti hai.",
-                "Penalty & Late Fees": "Payment delay hone par aapko extra late fee ya penalty deni padegi.",
-                "Automatic Renewal": "Agar aap time se cancel nahi karoge to yeh plan automatically renew ho sakta hai.",
-                "Data Sharing & Third-Party Consent": "Aapka personal data dusri companies ke saath share ho sakta hai.",
-                "Hidden Charges & Fees": "Isme aise hidden charges ho sakte hain jo pehle clearly nazar nahi aate."
-            }
-            return mapping.get(title, "Yeh clause aapke liye risk create kar sakta hai. Dhyan se padho.")
-        else:
-            mapping = {
-                "Lock-in Period": "This means you may not be able to easily exit or cancel this plan for some time.",
-                "Foreclosure / Prepayment Charges": "If you close the loan or EMI early, you may have to pay extra foreclosure or prepayment charges.",
-                "Penalty & Late Fees": "If your payment is late, you may need to pay penalty or late fees.",
-                "Automatic Renewal": "The plan may renew automatically unless you cancel it in time.",
-                "Data Sharing & Third-Party Consent": "Your personal data may be shared with other companies or partners.",
-                "Hidden Charges & Fees": "There might be extra fees that are not clearly visible at first."
-            }
-            return mapping.get(title, "This clause might create some risk for you. Please read it carefully.")
+    # Step 1: normal text extraction
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            pages_text = [page.extract_text() or "" for page in pdf.pages]
+            text = "\n".join(pages_text)
+    except Exception:
+        text = ""
 
-    text_clean = text.replace("\n", " ")
-    sentences = [s.strip() for s in re.split(r"[.!?]", text_clean) if s.strip()]
+    # If we already got decent text, return it
+    if text and len(text.strip()) > 30:
+        return text
 
-    detected = []
-    seen = set()
+    # Step 2: OCR fallback for scanned PDFs / image-based PDFs
+    if not PDF2IMAGE_AVAILABLE:
+        # pdf2image missing – can't OCR pages
+        return text  # may be empty or partial
 
-    for sentence in sentences:
-        lower = sentence.lower()
-        for key, rule in rules.items():
-            for kw in rule["keywords"]:
-                if kw in lower:
-                    tag = (rule["title"], sentence)
-                    if tag in seen:
-                        continue
-                    seen.add(tag)
+    try:
+        images = convert_from_bytes(pdf_bytes)
+    except Exception:
+        return text  # fallback
 
-                    detected.append({
-                        "type": key,
-                        "title": rule["title"],
-                        "severity": rule["severity"],
-                        "original_text": sentence,
-                        "simplified_text": simple_explanation(rule["title"], language)
-                    })
-                    break
-    return detected
+    ocr_chunks = []
+    for img in images:
+        try:
+            ocr_text = pytesseract.image_to_string(img)
+            if ocr_text:
+                ocr_chunks.append(ocr_text)
+        except Exception:
+            continue
+
+    if ocr_chunks:
+        return "\n".join(ocr_chunks)
+
+    return text or ""
 
 
-# =========================
-# RISK SCORE + LEVEL
-# =========================
-def calculate_risk_score(clauses):
+def extract_text_from_file(upload_file: UploadFile) -> str:
     """
-    - high = +25
-    - medium = +15
-    - low = +5
-    max 100
+    Extracts text from uploaded file.
+    - If PDF: normal text extraction + OCR fallback
+    - If IMAGE (jpg/png): OCR
+    - Otherwise: decodes as UTF-8
     """
-    score = 0
-    for c in clauses:
-        sev = (c.get("severity") or "medium").lower()
-        if sev == "high":
-            score += 25
-        elif sev == "medium":
-            score += 15
-        else:
-            score += 5
-    return min(score, 100)
+    filename = (upload_file.filename or "").lower()
+    content = upload_file.file.read()
+
+    if not content:
+        return ""
+
+    # Handle images directly
+    if any(filename.endswith(ext) for ext in [".jpg", ".jpeg", ".png"]):
+        return ocr_image_bytes(content)
+
+    # Handle PDFs
+    if filename.endswith(".pdf"):
+        return extract_text_from_pdf_bytes(content)
+
+    # Fallback: treat as text file
+    try:
+        return content.decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
 
 
-def risk_level_from_score(score: int) -> str:
+def fallback_risk_level(score: int) -> str:
     if score < 30:
         return "low"
     elif score < 70:
@@ -299,96 +150,192 @@ def risk_level_from_score(score: int) -> str:
         return "high"
 
 
-# =========================
-# MAIN API: /analyze
-# =========================
+def call_groq_for_analysis(text: str, language: str) -> Dict[str, Any]:
+    """
+    Sends the full document text to Groq LLM and asks it to:
+    - detect risky clauses
+    - assign severity
+    - generate simplified explanation (English or Hinglish)
+    - compute an overall risk score and risk level
+    - write a short overall summary
+
+    Returns a parsed Python dict.
+    """
+
+    client = get_groq_client()
+
+    # limit very long docs
+    max_chars = 20000
+    if len(text) > max_chars:
+        text_for_model = text[:max_chars]
+    else:
+        text_for_model = text
+
+    lang_label = "English" if language == "en" else "Hinglish (mix of Hindi and English in Latin script)"
+
+    system_prompt = (
+        "You are an expert contract and financial-risk analysis assistant. "
+        "Your job is to read the full document carefully and identify clauses that may create risk for a consumer, such as:\n"
+        "- lock-in periods or minimum tenure where the user cannot easily exit\n"
+        "- foreclosure or prepayment charges for closing loans early\n"
+        "- penalties, late fees, or high interest on overdue amounts\n"
+        "- hidden charges, non-refundable fees, and vague extra fees\n"
+        "- automatic renewal / auto-renewal of plans or subscriptions\n"
+        "- data sharing with third parties, partners, advertisers, or analytics vendors\n"
+        "- any clearly unfair, illegal, or one-sided terms\n\n"
+        "For each risky clause, you must:\n"
+        "- copy the original text snippet of that clause (or the key sentence(s))\n"
+        "- assign a severity: 'low', 'medium', or 'high'\n"
+        "- assign a category type (e.g., 'lock_in', 'foreclosure', 'penalty', 'charges', 'auto_renew', 'data_sharing', 'illegal_terms', or 'other')\n"
+        f"- generate a simplified explanation in {lang_label} that a non-expert user can understand.\n\n"
+        "Then you must compute an overall risk_score from 0 to 100, where:\n"
+        "- 0–29 = low risk\n"
+        "- 30–69 = medium risk\n"
+        "- 70–100 = high risk\n\n"
+        "You must also provide a short overall summary of the document's risk in plain language.\n\n"
+        "IMPORTANT:\n"
+        "- Be cautious and conservative: if in doubt, mark a clause as at least medium risk.\n"
+        "- Use the numeric values in the clause (e.g., percentage penalties, lock-in months) to decide severity.\n"
+        "- Do NOT hallucinate clauses; only use what actually appears in the given text.\n"
+        "- Output MUST be valid JSON only, no extra text.\n"
+        "- JSON keys must exactly match the following schema."
+    )
+
+    user_prompt = {
+        "role": "user",
+        "content": (
+            "Analyse the following contract or financial document and respond ONLY with valid JSON "
+            "conforming EXACTLY to this schema:\n\n"
+            "{\n"
+            '  "risk_score": <integer 0-100>,\n'
+            '  "risk_level": "low" | "medium" | "high",\n'
+            '  "summary": "<short plain-language summary in the requested language>",\n'
+            '  "clauses": [\n'
+            "    {\n"
+            '      "type": "lock_in" | "foreclosure" | "penalty" | "charges" | "auto_renew" | "data_sharing" | "illegal_terms" | "other",\n'
+            '      "title": "<short human-readable title>",\n'
+            '      "original_text": "<exact clause or key sentence(s) from the document>",\n'
+            '      "simplified_text": "<simple explanation in the requested language>",\n'
+            '      "severity": "low" | "medium" | "high"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            f"Requested explanation language: {lang_label}.\n\n"
+            "Now here is the document text to analyse:\n\n"
+            f"{text_for_model}"
+        ),
+    }
+
+    completion = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",  # or whichever Groq model you're using
+        messages=[
+            {"role": "system", "content": system_prompt},
+            user_prompt,
+        ],
+        temperature=0.1,
+    )
+
+    raw_content = completion.choices[0].message.content
+
+    def try_parse_json(s: str) -> Dict[str, Any]:
+        s = s.strip()
+        # Remove markdown fences if present
+        if s.startswith(""):
+            s = re.sub(r"^(json)?", "", s.strip(), flags=re.IGNORECASE).strip()
+            if s.endswith("```"):
+                s = s[:-3].strip()
+        return json.loads(s)
+
+    try:
+        data = try_parse_json(raw_content)
+    except Exception:
+        data = {
+            "risk_score": 0,
+            "risk_level": "low",
+            "summary": (
+                "The AI analysis failed to return structured data. "
+                "Please review the document manually; no structured risk result is available."
+            ),
+            "clauses": [],
+        }
+
+    # Sanity checks
+    risk_score = data.get("risk_score")
+    if not isinstance(risk_score, int):
+        try:
+            risk_score = int(risk_score)
+        except Exception:
+            risk_score = 0
+    risk_score = max(0, min(100, risk_score))
+    data["risk_score"] = risk_score
+
+    risk_level = str(data.get("risk_level", "")).lower()
+    if risk_level not in {"low", "medium", "high"}:
+        risk_level = fallback_risk_level(risk_score)
+    data["risk_level"] = risk_level
+
+    clauses = data.get("clauses")
+    if not isinstance(clauses, list):
+        clauses = []
+
+    cleaned_clauses: List[Dict[str, Any]] = []
+    for c in clauses:
+        if not isinstance(c, dict):
+            continue
+        cleaned_clauses.append({
+            "type": c.get("type", "other"),
+            "title": c.get("title", "Risky clause"),
+            "original_text": c.get("original_text", ""),
+            "simplified_text": c.get("simplified_text", ""),
+            "severity": c.get("severity", "medium").lower(),
+        })
+    data["clauses"] = cleaned_clauses
+
+    if not isinstance(data.get("summary"), str):
+        data["summary"] = "No summary available from the AI analysis."
+
+    return data
+
+
 @app.post("/analyze")
 async def analyze_document(
     file: UploadFile = File(...),
-    language: str = Form("en")  # "en" or "hi"
+    language: str = Form("en"),  # "en" -> English, "hi" -> Hinglish
 ):
     """
-    - Extract text
-    - Prefer AI to detect risky clauses
-    - If AI fails, use rule-based fallback
-    - Calculate risk score + summary
+    Main endpoint:
+    - Extracts text from file (PDF or image) using OCR if needed
+    - Sends it to Groq LLM for fully AI-based analysis
+    - Returns overall risk score, level, summary, and per-clause explanations
     """
-    filename = file.filename
+
+    filename = file.filename or "document"
+
     raw_text = extract_text_from_file(file)
 
-    if not raw_text.strip():
-        msg_en = "We could not read any text from this document. Please upload a text-based or clear PDF."
-        msg_hi = "Is document se text read nahi ho paaya. Kripya ek clear text-based PDF ya file upload karein."
+    if not raw_text or not raw_text.strip():
+        msg_en = "We could not read any text from this document. If it is an image/scanned PDF, please ensure it is clear and high-resolution."
+        msg_hi = "Is document se text read nahi ho paaya. Agar yeh image/scanned PDF hai, to please ek clear high-resolution copy upload karein."
         return {
             "file_name": filename,
             "risk_score": 0,
             "risk_level": "unknown",
             "summary": msg_hi if language == "hi" else msg_en,
-            "clauses": []
+            "clauses": [],
         }
 
-    # 1) Try AI-based detection
-    clauses = ai_detect_risks(raw_text, language)
-
-    # 2) If AI fails or returns nothing, use fallback
-    if clauses is None:
-        clauses = fallback_detect_risks(raw_text, language)
-
-    risk_score = calculate_risk_score(clauses)
-    risk_level = risk_level_from_score(risk_score)
-
-    high_count = sum(1 for c in clauses if (c.get("severity") or "").lower() == "high")
-    med_count = sum(1 for c in clauses if (c.get("severity") or "").lower() == "medium")
-
-    # English summary
-    parts_en = []
-    if risk_level == "high":
-        parts_en.append("This document has HIGH risk. It contains clauses that can lock you in or cause significant extra costs.")
-    elif risk_level == "medium":
-        parts_en.append("This document has MEDIUM risk. It contains some clauses you should review carefully before signing.")
-    else:
-        parts_en.append("This document appears to have LOW risk based on our checks, but you should still read it once before signing.")
-
-    if high_count:
-        parts_en.append(f"We found about {high_count} high-severity clauses (e.g., heavy penalties or long lock-in).")
-    if med_count:
-        parts_en.append(f"We also found {med_count} medium-severity clauses (such as extra charges or data sharing).")
-
-    parts_en.append("Scroll down to review each risky clause in simple language before you decide to sign.")
-    summary_en = " ".join(parts_en)
-
-    # Hinglish summary
-    parts_hi = []
-    if risk_level == "high":
-        parts_hi.append("Yeh document HIGH risk wala hai. Isme aise clauses hain jo aapko lock-in kar sakte hain ya extra paise dilaa sakte hain.")
-    elif risk_level == "medium":
-        parts_hi.append("Yeh document MEDIUM risk ka hai. Isme kuch important clauses hain jo sign karne se pehle dhyaan se padhna chahiye.")
-    else:
-        parts_hi.append("Humaare checks ke hisaab se yeh document LOW risk lagta hai, lekin sign karne se pehle ek baar zaroor padhna chahiye.")
-
-    if high_count:
-        parts_hi.append(f"Humein lagbhag {high_count} high-risk clauses mile (jaise bada lock-in ya heavy penalty).")
-    if med_count:
-        parts_hi.append(f"Humein {med_count} medium-risk clauses bhi mile (jaise extra charges, processing fee, data sharing).")
-
-    parts_hi.append("Neeche har risky clause ko simple Hinglish/English mein explain kiya gaya hai. Sign karne se pehle ek baar zaroor dekh lo.")
-    summary_hi = " ".join(parts_hi)
-
-    summary = summary_hi if language == "hi" else summary_en
+    ai_result = call_groq_for_analysis(raw_text, language)
 
     return {
         "file_name": filename,
-        "risk_score": risk_score,
-        "risk_level": risk_level,
-        "summary": summary,
-        "clauses": clauses
+        "risk_score": ai_result["risk_score"],
+        "risk_level": ai_result["risk_level"],
+        "summary": ai_result["summary"],
+        "clauses": ai_result["clauses"],
     }
 
 
-# =========================
-# Run directly from VS Code terminal
-# =========================
-if __name__ == "__main__":
+# Optional: run with python main.py
+if _name_ == "_main_":
     import uvicorn
-    # Clickable URL in VS Code: http://127.0.0.1:8003
     uvicorn.run("main:app", host="127.0.0.1", port=8003, reload=True)

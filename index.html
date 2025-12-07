@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <title>SafeSign – Contract Risk Analyzer</title>
 
-  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <script>
@@ -20,7 +19,6 @@
     };
   </script>
 
-  <!-- Simple animated background (always moving) -->
   <style>
     body {
       min-height: 100vh;
@@ -63,14 +61,12 @@
     }
   </style>
 
-  <!-- jsPDF for PDF download -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 
 <body class="text-slate-100">
   <div class="min-h-screen flex flex-col bg-slate-950/60 backdrop-blur-sm">
 
-    <!-- Top bar -->
     <header class="w-full border-b border-slate-800/70 bg-black/30 backdrop-blur-md">
       <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
@@ -90,11 +86,9 @@
       </div>
     </header>
 
-    <!-- Main -->
     <main class="flex-1">
       <div class="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-[1.05fr,1.45fr] gap-6">
 
-        <!-- LEFT: Upload + controls -->
         <section class="bg-slate-950/80 border border-slate-800/80 rounded-3xl p-5 soft-glow flex flex-col gap-4">
           <div>
             <h2 class="text-base font-semibold mb-1 flex items-center gap-2">
@@ -108,7 +102,6 @@
             </p>
           </div>
 
-          <!-- Upload area -->
           <label for="file" class="block">
             <div id="uploadBox"
               class="group border border-dashed border-slate-700 rounded-2xl p-5 bg-slate-950 hover:border-orange-500/80 hover:bg-slate-900 transition cursor-pointer flex flex-col items-center justify-center text-center">
@@ -126,7 +119,6 @@
                 </p>
               </div>
 
-              <!-- Success content (after upload) -->
               <div id="uploadSuccess" class="hidden flex flex-col items-center gap-1">
                 <span class="text-2xl">✅</span>
                 <p class="text-[13px] font-semibold text-emerald-400 text-center">
@@ -138,7 +130,6 @@
             <input id="file" type="file" class="hidden" />
           </label>
 
-          <!-- Small controls -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px] text-slate-300">
             <div>
               <p class="mb-1 text-slate-400">Document type (optional)</p>
@@ -161,12 +152,10 @@
             </div>
           </div>
 
-          <!-- File info helper -->
           <div id="fileInfo" class="text-[11px] text-slate-400 mt-1">
             No file selected.
           </div>
 
-          <!-- Analyse button -->
           <div class="flex items-center justify-between mt-3 gap-3">
             <button id="analyzeBtn"
               onclick="analyzeDoc()"
@@ -177,7 +166,6 @@
             <p id="status" class="text-[11px] text-slate-300 min-h-[16px] text-right flex-1 ml-1 truncate"></p>
           </div>
 
-          <!-- Analysis steps -->
           <div id="analysisSteps" class="hidden mt-3 text-[11px] text-slate-400 space-y-1 border border-slate-800/80 rounded-2xl px-3 py-2 bg-slate-950">
             <p class="text-[10px] uppercase tracking-wide text-slate-500 mb-1">What SafeSign does</p>
             <p id="step1" class="opacity-30 transition">1. Extracts text from the document…</p>
@@ -188,12 +176,10 @@
           </div>
         </section>
 
-        <!-- RIGHT: Analysis result -->
         <section class="bg-slate-950/80 border border-slate-800/80 rounded-3xl p-5 soft-glow flex flex-col">
-          <!-- Empty state -->
           <div id="emptyState" class="flex-1 flex flex-col items-center justify-center text-center text-slate-500 text-xs">
             <div class="w-16 h-16 rounded-full border border-dashed border-slate-700 flex items-center justify-center mb-3 floating">
-              <span class="text-2xl">🛡️</span>
+              <span class="text-2xl">🛡</span>
             </div>
             <p class="mb-1 text-slate-200 text-sm">No document analysed yet</p>
             <p class="max-w-xs">
@@ -201,9 +187,7 @@
             </p>
           </div>
 
-          <!-- Result state -->
           <div id="resultCard" class="hidden flex-1 flex flex-col gap-4">
-            <!-- Document header + risk tag + download button -->
             <div class="flex items-center justify-between">
               <div>
                 <p class="text-[11px] text-slate-400">Analysed document</p>
@@ -222,7 +206,6 @@
               </div>
             </div>
 
-            <!-- Risk overview card -->
             <div class="grid grid-cols-1 sm:grid-cols-[1.1fr,1.4fr] gap-3">
               <div class="bg-slate-950 border border-slate-800 rounded-2xl px-3 py-3 flex flex-col justify-center">
                 <p class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Overall risk score</p>
@@ -241,7 +224,6 @@
               </div>
             </div>
 
-            <!-- Clauses list -->
             <div class="flex-1 min-h-[140px]">
               <p class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Risky clauses detected</p>
               <ul id="clausesList" class="space-y-2 text-xs max-h-60 overflow-auto pr-1"></ul>
@@ -251,7 +233,6 @@
       </div>
     </main>
 
-    <!-- Footer -->
     <footer class="w-full border-t border-slate-900/80 bg-black/40">
       <div class="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between text-[10px] text-slate-500">
         <span>SafeSign prototype · Helps you understand key risks before you sign</span>
@@ -351,7 +332,7 @@
         statusEl.textContent = "";
       } catch (err) {
         console.error(err);
-        statusEl.textContent = "Could not connect to backend. Is it running on port 8001?";
+        statusEl.textContent = "Could not connect to backend. Is it running on port 8003?";
       } finally {
         btnIcon.textContent = "⚡";
         setTimeout(() => {
